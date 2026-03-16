@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple
 
 
 class TaskExecutionError(RuntimeError):
@@ -17,6 +17,7 @@ class Task:
     name: str
     func: Callable[[Mapping[str, Any]], Any]
     dependencies: List[str] = field(default_factory=list)
+    description: str | None = None
 
     def run(self, context: Mapping[str, Any]) -> Any:
         return self.func(context)
@@ -50,6 +51,18 @@ class TaskGraph:
                 indegree[task.name] += 1
         return adjacency, indegree
 
+    def validate(self) -> List[str]:
+        messages: List[str] = []
+        try:
+            self.topological_order()
+        except ValueError as exc:
+            messages.append(str(exc))
+        for task in self._tasks.values():
+            for dep in task.dependencies:
+                if dep not in self._tasks:
+                    messages.append(f"Task '{task.name}' depends on missing task '{dep}'")
+        return messages
+
     def topological_order(self) -> List[str]:
         adjacency, indegree = self._build_adjacency()
         queue: deque[str] = deque(name for name, deg in indegree.items() if deg == 0)
@@ -67,6 +80,35 @@ class TaskGraph:
             raise ValueError("Task graph contains a cycle")
 
         return order
+
+    def plan(self, targets: Optional[Iterable[str]] = None) -> List[Tuple[int, Sequence[str]]]:
+        order = self.topological_order()
+        if targets is not None:
+            target_set = set(targets)
+        else:
+            target_set = set(self._tasks.keys())
+
+        levels: List[Tuple[int, Sequence[str]]] = []
+        adjacency, indegree = self._build_adjacency()
+        queue: deque[Tuple[str, int]] = deque()
+        for name, deg in indegree.items():
+            if deg == 0:
+                queue.append((name, 0))
+
+        by_level: Dict[int, List[str]] = defaultdict(list)
+        while queue:
+            node, level = queue.popleft()
+            by_level[level].append(node)
+            for neighbor in adjacency.get(node, ()):
+                indegree[neighbor] -= 1
+                if indegree[neighbor] == 0:
+                    queue.append((neighbor, level + 1))
+
+        for level in sorted(by_level):
+            batch = [name for name in by_level[level] if name in target_set or any(t in target_set for t in self._downstream(name))]
+            if batch:
+                levels.append((level, tuple(sorted(batch))))
+        return levels
 
     def execute(self, targets: Optional[Iterable[str]] = None, initial_context: Optional[MutableMapping[str, Any]] = None) -> Dict[str, Any]:
         if not self._tasks:
