@@ -1,0 +1,20 @@
+[project]
+name = "mars-taskflow"
+version = "0.1.0"
+description = "A lightweight Python task workflow engine with DAG execution and a CLI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Prateek Dabas" }
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "rich>=13.0.0"]
+
+[project.scripts]
+mars-taskflow = "mars_taskflow.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
